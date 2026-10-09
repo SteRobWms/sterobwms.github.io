@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Trip packer</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+<style>
+  :root {
+    --ink: #1c2428; --muted: #5c656a; --line: #e4ddd2; --paper: #f4f1ea; --card: #fffdf9;
+    --navy: #1b3a4b; --teal: #1f6f6a; --chip: #efeae1; --input: #fff; --track: #d9d0c4;
+    --cold: #1d4f91; --cool: #2f6f97; --warm: #c56a1a; --hot: #b42318;
+    --on-cold: #fff; --on-cool: #fff; --on-warm: #fff; --on-hot: #fff;
+  }
+  html[data-theme="dark"] {
+    --ink: #e8e6e3; --muted: #a8a29e; --line: #3f3f46; --paper: #18181b; --card: #27272a;
+    --navy: #0f1720; --teal: #2f9e90; --chip: #3f3f46; --input: #1f1f23; --track: #52525b;
+    --cold: #7aa2d4; --cool: #8eb8d4; --warm: #e0a15a; --hot: #f0a8a2;
+    --on-cold: #0f1720; --on-cool: #0f1720; --on-warm: #1c1208; --on-hot: #1c0a08;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 Arial, sans-serif; color: var(--ink); background: var(--paper); }
+  header { background: var(--navy); color: #f7f3ea; padding: 16px 22px; display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+  .head-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+  .modal { z-index: 10000; }
+  .trip-bar { display: flex; justify-content: flex-start; gap: 30px; align-items: end; flex-wrap: wrap; }
+  .qtys { display: flex; gap: 6px; align-items: flex-end; }
+  .bag-qty { display: flex; flex-direction: column; align-items: center; width: 90px; }
+  .pack-cell .stepper { width: 90px; height: 28px; flex: none; }
+  .trip-group { display: flex; gap: 10px; align-items: end; }
+  @media (max-width: 800px) {
+    .trip-bar { flex-direction: column; align-items: stretch; }
+    .trip-group.stack { flex-direction: column; align-items: stretch; }
+  }
+  .keep-row { flex-wrap: nowrap; }
+  .zones { margin: 20px 0 0; font-size: 13px; font-weight: 700; }
+  .wear-row { display: flex; gap: 12px; }
+  .wear-row span { display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+  .zone-clock { position: absolute; z-index: 4; cursor: help; font-size: 16px; line-height: 1; transform: translate(-50%, -50%); }
+  .zone-clock span { display: none; position: absolute; bottom: 1.3em; left: 0; width: max-content; background: var(--card); color: var(--ink); border: 1px solid var(--line); padding: 6px 8px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .zone-clock:hover span { display: block; }
+  #map.night .maplibregl-canvas { filter: brightness(1.6) contrast(.92); }
+  .pack-grid { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+  .pack-grid h3 { flex: 1 0 100%; margin: 14px 0 6px; font-size: 16px; font-weight: 700; color: var(--ink); }
+  .pack-cell { display: flex; align-items: flex-end; width: max-content; gap: 0; padding: 4px 0 4px 10px; border-left: 2px solid var(--line); font-size: 13px; box-sizing: border-box; }
+  .pack-cell .name { width: 140px; flex: 0 0 140px; margin-left: 10px; white-space: pre-line; }
+  .pack-cell .name { font-weight: 700; }
+  .pack-cell.unused .stepper, .pack-cell.unused .name { opacity: .35; }
+  .pack-cell .vol { width: 60px; flex: 0 0 60px; text-align: right; padding-right: 10px; box-sizing: border-box; white-space: nowrap; }
+  .stepper { display: inline-flex; flex-wrap: nowrap; align-items: center; width: 90px; height: 28px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .stepper button { width: 28px; height: 28px; flex: 0 0 28px; border: 0; background: var(--chip); color: var(--ink); font: 700 16px/28px Arial, sans-serif; cursor: pointer; }
+  .stepper button:first-child { border-radius: 7px 0 0 7px; }
+  .stepper button:last-child { border-radius: 0 7px 7px 0; }
+  .wear-line, .wear-row { padding-left: 10px; }
+  .stepper { display: inline-flex; flex-wrap: nowrap; align-items: center; width: max-content; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .stepper button { width: 28px; height: 28px; flex: 0 0 28px; border: 0; background: var(--chip); color: var(--ink); font: 700 16px/28px Arial, sans-serif; cursor: pointer; }
+  .qty { width: 30px; text-align: center; border: 0; background: transparent; color: var(--ink); font: 700 14px Arial, sans-serif; }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+  .bag-meter { height: 18px; background: var(--chip); border-radius: 6px; overflow: hidden; margin: 8px 0; display: flex; }
+  .bag-meter i { display: block; height: 100%; background: var(--teal); }
+  .bag-meter i.over { background: #b42318; }
+  .scale { position: relative; height: 18px; margin-top: 6px; }
+  .scale i { position: absolute; top: 0; width: 1px; height: 0.5rem; background: var(--ink); }
+  .scale b { position: absolute; top: 2px; font-size: 14px; font-weight: 700; color: var(--muted); white-space: nowrap; transform: translateX(-50%); }
+  .wear-row .place { width: 150px; }
+  .wear-row .when { width: 220px; }
+  .wear-row .sky { width: 190px; }
+  .pin { width: 42px; height: 42px; font-size: 33px; line-height: 42px; text-align: center; background: #fff; color: #1c2428; border: 2px solid #1c2428; border-radius: 50%; }
+  .pin.dot { width: 14px; height: 14px; border-radius: 50%; background: #b42318; border: 2px solid #fff; font-size: 0; }
+  #map.night .pin:not(.dot) { background: #1c2428; color: #fff; border-color: #fff; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 3px 0 0; color: #d5e4de; font-size: 13px; }
+  button.ghost, button.tabby, button.primary, header button, .bar button, .tabs button, .modal button, .stay button { font: 14px Arial, sans-serif; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+  button.primary { background: var(--teal); color: #fff; border: 0; }
+  button.ghost { background: darkslategray; color: #f7f3ea; border: 1px solid #8aa0ab; }
+  html[data-theme="dark"] #map::after,
+  html[data-theme="dark"] #graphWrap::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(90, 90, 90, .3);
+    pointer-events: none;
+    z-index: 4;
+  }
+  main { max-width: 1180px; margin: 0 auto; padding: 16px 18px 48px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 0 0 12px; }
+  h2 { margin: 0 0 10px; font-size: 15px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  input, select { font: 14px Arial, sans-serif; color: var(--ink); background: var(--input); border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; }
+  input[type="number"] { width: 84px; }
+  input.qty { width: 30px; padding: 0; }
+  input[type="date"] { width: 120px; }
+  input.place { width: 150px; }
+  #tripName, #saved { width: 200px; max-width: none; }
+  .stay .leg-row + .leg-row { margin-top: 16px; }
+  .bag-row { margin: 8px 0; }
+  .bag-name { width: 160px; }
+  .pack-group { display: flex; flex-wrap: wrap; gap: 8px 16px; width: 100%; }
+  .bag-lab { display: block; height: 16px; font-size: 11px; font-weight: 700; color: var(--muted); }
+  .bag-lab[hidden] { display: none; }
+  .name { position: relative; }
+  .dim-tip { display: none; position: absolute; left: 0; bottom: 1.4em; background: var(--card); color: var(--ink); border: 1px solid var(--line); padding: 6px 8px; z-index: 6; white-space: nowrap; font-weight: 700; }
+  .name:hover .dim-tip, .name.on .dim-tip { display: block; }
+  .leg-group { display: flex; flex-wrap: nowrap; gap: 10px; align-items: end; }
+  .bandbox { margin-top: 5px; }
+  .band-scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .band-track { position: relative; height: 28px; border-radius: 7px; overflow: visible; user-select: none; touch-action: none; }
+  .band-track .seg { position: absolute; top: 0; height: 100%; }
+  .band-track .seg.cold { background: #1a4f8b; border-radius: 7px 0 0 7px; }
+  .band-track .seg.cool { background: #14b8c4; }
+  .band-track .seg.warm { background: #e07a2f; }
+  .band-track .seg.hot { background: #c0392b; border-radius: 0 7px 7px 0; }
+  .band-track .room { position: absolute; top: -2px; width: 2px; height: 32px; background: #fff; opacity: .85; pointer-events: none; }
+  .timeline input[type="range"] { width: 100%; accent-color: var(--teal); }
+  .handle { position: absolute; top: -4px; width: 14px; height: 36px; margin-left: -7px; border: 2px solid #1c2428; border-radius: 3px; background: #fff; cursor: ew-resize; padding: 0; }
+  .handle:focus { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .handle-label { position: absolute; top: 1em; transform: translateX(-50%); font-size: 11px; font-weight: 700; color: var(--ink); white-space: nowrap; pointer-events: none; }
+  .graph { height: 320px; border-radius: 8px; background: #c3c8ca; position: relative; overflow: hidden; }
+  .graph svg { width: 100%; height: 320px; display: block; }
+  .callouts { width: 100%; margin: 8px 0 0; text-align: left; }
+  .callouts .wear-row { justify-content: flex-start; }
+  .scrub-wrap { position: relative; height: 31px; padding-top: 8px; }
+  .scale { position: relative; height: 30px; margin-top: 0; }
+  .scale b { top: 1rem; font-size: 0.75rem; font-weight: 700; }
+  .chapters { position: relative; height: 3rem; margin-top: 5px; }
+  section { padding-bottom: 10px; }
+  #boardPane { padding: 14px 8px 10px; }
+  .chapters i { position: absolute; top: 0; width: 4px; height: 8px; background: grey; }
+  .chapters b { position: absolute; font-size: 14px; font-weight: 700; color: var(--ink); white-space: nowrap; transform: translateX(-50%); background: var(--card); z-index: 2; line-height: 1.2rem; padding: 0 3px; }
+  .stepper { display: inline-flex; flex-wrap: nowrap; align-items: center; width: max-content; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .stepper button { width: 28px; height: 28px; border: 0; background: var(--chip); color: var(--ink); font: 700 16px/28px Arial, sans-serif; cursor: pointer; }
+  .stepper b { min-width: 28px; text-align: center; font-size: 14px; }
+  .pack-sum { font-size: 13px; margin: 8px 0 0; }
+  #boardPane { padding: 14px 8px 14px; }
+  .stay, .seam { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 8px 0; }
+  .seam { background: var(--chip); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
+  th { font-size: 11px; color: var(--muted); }
+  .checks { display: flex; gap: 8px; flex-wrap: wrap; }
+  .checks label { flex-direction: row; align-items: center; color: var(--ink); }
+  .bar, .tabs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .tabs { margin-bottom: 8px; }
+  .tabs button { background: var(--chip); color: var(--ink); border: 0; }
+  .tabs button.on { background: #2f4f4f; color: #fff; }
+  .status { font-size: 13px; color: var(--muted); }
+  .status.err { color: #b42318; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+  #map { height: 320px; border-radius: 8px; border: 1px solid var(--line); position: relative; }
+  @media (max-width: 800px) { .split { grid-template-columns: 1fr; } }
+  .graph { height: 320px; border-radius: 8px; background: #c3c8ca; position: relative; overflow: hidden; }
+  .graph svg { width: 100%; height: 320px; display: block; }
+  .callouts { width: 100%; margin: 8px 0 0; text-align: left; }
+  .callouts .wear-row { justify-content: flex-start; }
+  .callouts .wear-row { justify-content: center; }
+  .scrub-wrap { position: relative; height: 31px; padding-top: 8px; }
+  .scale { position: relative; height: 30px; margin-top: 0; }
+  .chapters { position: relative; height: 3rem; margin-top: 5px; }
+  #boardPane { padding: 14px 8px 10px; }
+  #saved { width: 200px; max-width: none; }
+  #packToggle.on { background: var(--navy); color: #fff; }
+  .zoomctl { position: absolute; top: 8px; right: 8px; z-index: 2; display: flex; flex-direction: row; border: 1px solid rgba(0,0,0,.25); border-radius: 4px; overflow: hidden; }
+  .zoomctl button { width: 30px; height: 30px; border: 0; border-right: 1px solid rgba(0,0,0,.2); background: #fff; color: #1c2428; font: 700 18px/30px Arial, sans-serif; cursor: pointer; padding: 0; }
+  .zoomctl button:last-child { border-right: 0; }
+  .tabby { background: var(--chip); color: var(--ink); border: 0; height: 34px; padding: 0 12px; border-radius: 6px; cursor: pointer; }
+  select { height: 34px; }
+  .scrub-tip { position: absolute; top: 0; font-size: 11px; font-weight: 700; white-space: nowrap; transform: translateX(-50%); }
+  .readout { height: 320px; min-width: 0; }
+  .graph.estimate { filter: grayscale(.55) brightness(.85); }
+  .travel-hold { display: none; }
+  .chip { font-weight: 700; color: #fff; }
+  .wear .marks { display: inline-flex; gap: 8px; font-size: 18px; vertical-align: middle; }
+  .wear .marks span { opacity: .4; }
+  .wear .marks span.on { opacity: 1; }
+  .timeline { margin-top: 8px; padding: 0 56px 4px; }
+  .timeline input[type="range"] { width: 100%; }
+  .chapters i { position: absolute; top: 0; width: 4px; height: 8px; background: grey; }
+  .chapters b { position: absolute; font-size: 14px; font-weight: 700; color: var(--ink); white-space: nowrap; transform: translateX(-50%); background: var(--card); z-index: 2; padding: 0 3px; }
+  .scrub-tip { font-size: 14px; }
+  .temp { font-weight: 700; border-radius: 4px; padding: 1px 5px; display: inline-block; }
+  .temp.cold { background: var(--cold); color: var(--on-cold); }
+  .temp.cool { background: var(--cool); color: var(--on-cool); }
+  .temp.warm { background: var(--warm); color: var(--on-warm); }
+  .temp.hot { background: var(--hot); color: var(--on-hot); }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 18px; }
+  .modal[hidden] { display: none; }
+  .sheet { background: var(--card); color: var(--ink); border-radius: 10px; padding: 16px; max-width: 520px; width: 100%; }
+  .note { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+  .suggest { position: relative; }
+  .suggest ul { position: absolute; z-index: 5; background: var(--card); border: 1px solid var(--line); margin: 2px 0 0; padding: 0; list-style: none; width: 100%; }
+  .suggest li { padding: 6px 8px; cursor: pointer; }
+  .suggest li:hover { background: var(--chip); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Trip packer</h1>
+  </div>
+  <div class="head-actions">
+    <button class="ghost" id="legendBtn" type="button">Legend</button>
+    <button class="ghost" id="theme" type="button">Dark mode</button>
+  </div>
+</header>
+<main>
+  <section>
+    <div class="zones">Trip Information</div>
+    <div class="trip-bar">
+      <div class="trip-group stack">
+        <label>Trip name <input id="tripName" type="text" value="Houston, SD, SF, Nashville" /></label>
+      </div>
+      <div class="trip-group keep-row">
+        <label>Saved Trips <select id="saved"></select></label>
+        <button class="tabby" id="saveTrip" type="button">Save</button>
+        <button class="tabby" id="loadTrip" type="button">Load</button>
+        <button class="tabby" id="deleteTrip" type="button">Delete</button>
+        <span class="status" id="saveNotice"></span>
+      </div>
+    </div>
+    <div class="zones">Luggage</div>
+    <div id="bags"></div>
+    <button class="ghost" id="addBag" type="button">Add Luggage</button>
+    <div class="zones">Temperature Zones</div>
+    <div class="bandbox">
+      <div class="band-scale"><span>50°</span><span></span><span>85°</span></div>
+      <div class="band-track" id="bandTrack">
+        <div class="seg cold" data-seg="cold"></div>
+        <div class="seg cool" data-seg="cool"></div>
+        <div class="seg warm" data-seg="warm"></div>
+        <div class="seg hot" data-seg="hot"></div>
+        <i class="room" id="roomTick" title="72°F room"></i>
+        <button type="button" class="handle" data-band="cold" aria-label="Cold threshold"></button>
+        <button type="button" class="handle" data-band="cool" aria-label="Cool threshold"></button>
+        <button type="button" class="handle" data-band="warm" aria-label="Warm threshold"></button>
+      </div>
+      <div style="position:relative;height:1.5em;margin-bottom:0">
+        <span class="handle-label" data-for="cold"></span>
+        <span class="handle-label" data-for="cool"></span>
+        <span class="handle-label" data-for="warm"></span>
+      </div>
+      <input type="hidden" id="cold" value="60" />
+      <input type="hidden" id="cool" value="70" />
+      <input type="hidden" id="warm" value="80" />
+    </div>
+  </section>
+
+  <div class="tabs" id="viewSwitch" hidden>
+    <button type="button" data-pane="stays" class="on">Itinerary</button>
+    <button type="button" data-pane="board" id="boardTab" hidden>Map and Weather</button>
+  </div>
+  <section id="stayPane">
+    <h2>Itinerary</h2>
+    <p class="note">Each card is one leg. A stay is the time at the destination until the next leg leaves.</p>
+    <div id="legs"></div>
+    <div class="bar">
+      <button class="ghost" id="addStay" type="button">Add leg</button>
+      <button class="ghost" id="example" type="button">Load Oct 10–18 example</button>
+      <button class="primary" id="plan" type="button">Build plan</button>
+      <span class="status" id="status"></span>
+    </div>
+  </section>
+
+  <section id="boardPane" hidden>
+    <div class="split">
+      <div id="map"></div>
+      <div class="readout">
+        <div class="graph" id="graphWrap">
+          <div class="zoomctl">
+            <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
+            <button id="zoomOut" type="button" aria-label="Zoom out">−</button>
+          </div>
+          <svg id="wx" viewBox="0 0 640 320" role="img" aria-label="Feels like over time"></svg>
+        </div>
+      </div>
+    </div>
+    <div class="callouts" id="wearNow"></div>
+    <div class="timeline">
+      <div class="scrub-wrap">
+        <div class="scrub-tip" id="scrubTip"></div>
+        <input id="scrub" type="range" min="0" value="0" />
+      </div>
+      <div class="scale" id="scale"></div>
+      <div class="chapters" id="chapters"></div>
+    </div>
+  </section>
+
+  <section id="packPane" hidden>
+    <h2>Packing List</h2>
+    <div class="pack-body" id="packBody"></div>
+  </section>
+
+  <div hidden>
+    <button id="exportTrip" type="button">Export JSON</button>
+    <input id="importTrip" type="file" accept="application/json" />
+  </div>
+</main>
+<div class="modal" id="legend" hidden>
+  <div class="sheet">
+    <h2>Legend</h2>
+    <p>Color and mark together. Color is not the only signal.</p>
+    <p><span class="temp cold">❄ 58°</span> cold, below your cold line. Warm clothes.</p>
+    <p><span class="temp cool">🧥 66°</span> cool, below your cool line. Long sleeves, or a tee and a shell.</p>
+    <p><span class="temp warm">👕 74°</span> warm, below your warm line. Short sleeves, shorts or pants.</p>
+    <p><span class="temp hot">🥵 86°</span> hot, at or above your warm line. Light clothes.</p>
+    <p>☀ clear · ⛅ partly · ☁ cloud · 🌧 rain · ⛈ storm · ❄ snow · 🌫 fog · 🌙 clear night</p>
+    <p>✈ ✦ 🚆 🚗 travel chapter. All three stay on screen. The lit one is the method.</p>
+    <p class="note">A gray graph is a climate normal, the mean of that hour over the prior 8 years, not a forecast. Room temperature is 72°F, not a slider.</p>
+    <button class="primary" id="closeLegend" type="button">Close</button>
+  </div>
+</div>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+const ROOM = 72;
+const STORE = "trip-packer-v2";
+let map, marker, line, last, scrub = 0, zoom = 0, mapNight = false;
+
+const BAND_MIN = 50, BAND_MAX = 85;
+function thresholds() {
+  return { cold: Number($("#cold").value), cool: Number($("#cool").value), warm: Number($("#warm").value) };
+}
+function pct(v) { return ((v - BAND_MIN) / (BAND_MAX - BAND_MIN)) * 100; }
+function lockBands() {
+  const c = $("#cold"), m = $("#cool"), w = $("#warm");
+  let cold = Math.round(+c.value), cool = Math.round(+m.value), warm = Math.round(+w.value);
+  cold = Math.max(BAND_MIN + 1, Math.min(cold, BAND_MAX - 3));
+  cool = Math.max(cold + 1, Math.min(cool, BAND_MAX - 2));
+  warm = Math.max(cool + 1, Math.min(warm, BAND_MAX - 1));
+  c.value = cold; m.value = cool; w.value = warm;
+  const p = { cold: pct(cold), cool: pct(cool), warm: pct(warm) };
+  const segs = { cold: [0, p.cold], cool: [p.cold, p.cool - p.cold], warm: [p.cool, p.warm - p.cool], hot: [p.warm, 100 - p.warm] };
+  Object.entries(segs).forEach(([name, [left, width]]) => {
+    const el = document.querySelector(`[data-seg="${name}"]`);
+    el.style.left = left + "%";
+    el.style.width = width + "%";
+  });
+  $("#roomTick").style.left = pct(ROOM) + "%";
+  document.querySelectorAll(".handle").forEach((h) => {
+    const key = h.dataset.band;
+    h.style.left = p[key] + "%";
+    h.setAttribute("aria-valuemin", BAND_MIN);
+    h.setAttribute("aria-valuemax", BAND_MAX);
+    h.setAttribute("aria-valuenow", { cold, cool, warm }[key]);
+  });
+  document.querySelectorAll(".handle-label").forEach((lab) => {
+    const key = lab.dataset.for;
+    lab.style.left = p[key] + "%";
+    lab.textContent = { cold: "Cold", cool: "Cool", warm: "Warm" }[key] + " " + { cold, cool, warm }[key] + "°";
+  });
+}
+function setBand(key, value) {
+  $("#" + key).value = value;
+  lockBands();
+  saveForm();
+}
+document.querySelectorAll(".handle").forEach((handle) => {
+  handle.addEventListener("pointerdown", (e) => {
+    handle.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      const rect = $("#bandTrack").getBoundingClientRect();
+      const raw = BAND_MIN + ((ev.clientX - rect.left) / rect.width) * (BAND_MAX - BAND_MIN);
+      setBand(handle.dataset.band, raw);
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+  });
+  handle.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    setBand(handle.dataset.band, Number($("#" + handle.dataset.band).value) + (e.key === "ArrowRight" ? 1 : -1));
+  });
+});
+lockBands();
+
+function band(feels, t) {
+  if (feels < t.cold) return "cold";
+  if (feels < t.cool) return "cool";
+  if (feels < t.warm) return "warm";
+  return "hot";
+}
+function mark(b) { return { cold: "❄", cool: "🧥", warm: "👕", hot: "🥵" }[b]; }
+function skyName(code) {
+  if (code === 0) return "Clear";
+  if (code <= 2) return "Partly cloudy";
+  if (code === 3) return "Cloudy";
+  if (code === 45 || code === 48) return "Fog";
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return "Rain";
+  if (code >= 71 && code <= 77) return "Snow";
+  if (code >= 95) return "Storm";
+  return "Cloudy";
+}
+function wmoIcon(code, hour) {
+  if (code === 0) return hour >= 20 || hour < 6 ? "🌙" : "☀";
+  if (code <= 2) return "⛅";
+  if (code === 3) return "☁";
+  if (code === 45 || code === 48) return "🌫";
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return "🌧";
+  if (code >= 71 && code <= 77) return "❄";
+  if (code >= 95) return "⛈";
+  return "☁";
+}
+const DIMS = {
+  "T-shirt": [10, 8, 1.5],
+  "Long-sleeve": [12, 9, 2],
+  "Fleece": [14, 12, 3.5],
+  "Coat": [16, 14, 5],
+  "Wind shell": [11, 8, 1.5],
+  "Rain shell": [12, 9, 2],
+  "Shorts": [11, 9, 1.5],
+  "Skirt": [11, 9, 1.5],
+  "Pants": [14, 11, 2.25],
+  "Jeans": [14, 11, 2.75],
+  "Slacks": [14, 11, 2],
+  "Joggers": [14, 11, 2.25],
+  "Dress": [14, 11, 2],
+  "Cap": [10, 8, 5, true],
+  "Walking shoes": [13, 10, 6.5, true],
+  "Sandals": [12, 8, 3.5, true],
+  "Nice shoes": [12, 7, 4, true],
+  "Pajamas": [12, 10, 2.5],
+  "Underwear": [8, 6, 0.6],
+  "Socks (pairs)": [8, 4, 0.8],
+  "Toiletries": [9, 6, 3.5, true],
+  "Electronics\n(cables, chargers)": [5, 6, 3],
+  "Electronics\n(laptops, cameras)": [11, 16, 2.5, true],
+  "Miscellaneous": [4, 4, 3]
+};
+function esc(s) {
+  const map = { "&": "&" + "amp;", "<": "&" + "lt;", ">": "&" + "gt;", '"': "&" + "quot;" };
+  return String(s).replace(/[&<>"]/g, (c) => map[c]);
+}
+function vol(name) {
+  const d = DIMS[name] || [6, 4, 1];
+  return d[0] * d[1] * d[2];
+}
+function hard(name) { return !!(DIMS[name] && DIMS[name][3]); }
+function outfit(b) {
+  return {
+    cold: ["Underwear", "Socks (pairs)", "Pants", "Long-sleeve", "Fleece/Coat", "Walking shoes"],
+    cool: ["Underwear", "Socks (pairs)", "Pants", "Long-sleeve", "Walking shoes"],
+    warm: ["Underwear", "Socks (pairs)", "Pants/Shorts", "T-shirt", "Walking shoes/Sandals"],
+    hot: ["Underwear", "Socks (pairs)", "Shorts/Pants", "T-shirt", "Walking shoes/Sandals"]
+  }[b];
+}
+
+function bindSuggest(input, note) {
+  const list = input.parentElement.querySelector("ul");
+  let timer;
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      if (input.value.trim().length < 2) { list.hidden = true; return; }
+      const json = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=5&language=en&format=json&name=${encodeURIComponent(input.value.trim())}`)).json();
+      list.innerHTML = "";
+      (json.results || []).forEach((g) => {
+        const li = document.createElement("li");
+        li.textContent = `${g.name}${g.admin1 ? ", " + g.admin1 : ""}`;
+        li.onclick = () => { input.value = li.textContent; list.hidden = true; if (note) note.textContent = g.timezone || ""; saveForm(); };
+        list.appendChild(li);
+      });
+      list.hidden = !list.children.length;
+    }, 250);
+  });
+}
+function hourOptions() {
+  let html = `<option value="">Hour</option>`;
+  for (let h = 1; h <= 12; h++) html += `<option value="${h}">${h}</option>`;
+  return html;
+}
+function minuteOptions() {
+  return `<option value="">Min</option>` + [0, 15, 30, 45].map((m) => `<option value="${String(m).padStart(2, "0")}">${String(m).padStart(2, "0")}</option>`).join("");
+}
+function splitStamp(stamp) {
+  if (!stamp || !stamp.includes("T")) return { date: "", hour: "", minute: "", ap: "AM" };
+  const [date, raw] = stamp.split("T");
+  const [h, m] = raw.split(":").map(Number);
+  const snapped = Math.round(((h || 0) * 60 + (m || 0)) / 15) * 15 % (24 * 60);
+  const hh = Math.floor(snapped / 60);
+  return { date, hour: String(hh % 12 || 12), minute: String(snapped % 60).padStart(2, "0"), ap: hh >= 12 ? "PM" : "AM" };
+}
+function joinTime(hour, minute, ap) {
+  if (!hour || minute === "") return "";
+  let hh = Number(hour) % 12;
+  if (ap === "PM") hh += 12;
+  return `${String(hh).padStart(2, "0")}:${minute}`;
+}
+function stayBlock(row) {
+  const wrap = document.createElement("div");
+  wrap.className = "block";
+  const hours = hourOptions();
+  const minutes = minuteOptions();
+  const ap = `<option>AM</option><option>PM</option>`;
+  wrap.innerHTML = `
+    <div class="stay">
+      <div class="leg-row">
+        <div class="leg-group">
+          <label>Travel method
+            <select data-k="method">
+              <option value="plane">Plane</option>
+              <option value="train">Train</option>
+              <option value="car">Car</option>
+            </select>
+          </label>
+          <label class="suggest">Origin <input class="place" type="text" data-k="origin" placeholder="Houston, TX" /><ul hidden></ul></label>
+          <label class="suggest">Destination <input class="place" type="text" data-k="destination" placeholder="San Diego, CA" /><ul hidden></ul></label>
+          <button class="ghost" type="button" data-del>Remove leg</button>
+        </div>
+      </div>
+      <div class="leg-row">
+        <div class="leg-group">
+          <label>Departure date <input type="date" data-k="departure-date" /></label>
+          <label>Hour <select class="time-part" data-k="departure-hour">${hours}</select></label>
+          <label>Minute <select class="time-part" data-k="departure-minute">${minutes}</select></label>
+          <label>AM/PM <select class="time-part" data-k="departure-ap">${ap}</select></label>
+        </div>
+        <div class="leg-group">
+          <label>Arrival date <input type="date" data-k="arrival-date" /></label>
+          <label>Hour <select class="time-part" data-k="arrival-hour">${hours}</select></label>
+          <label>Minute <select class="time-part" data-k="arrival-minute">${minutes}</select></label>
+          <label>AM/PM <select class="time-part" data-k="arrival-ap">${ap}</select></label>
+        </div>
+      </div>
+      <p class="note" data-tz></p>
+    </div>`;
+  if (row) {
+    const dep = splitStamp(row.departure || row.leave || "");
+    const arr = splitStamp(row.arrival || row.arrive || "");
+    wrap.querySelector('[data-k="method"]').value = row.method || "plane";
+    wrap.querySelector('[data-k="origin"]').value = row.origin || row.place || "";
+    wrap.querySelector('[data-k="destination"]').value = row.destination || "";
+    wrap.querySelector('[data-k="departure-date"]').value = dep.date;
+    wrap.querySelector('[data-k="departure-hour"]').value = dep.hour;
+    wrap.querySelector('[data-k="departure-minute"]').value = dep.minute;
+    wrap.querySelector('[data-k="departure-ap"]').value = dep.ap;
+    wrap.querySelector('[data-k="arrival-date"]').value = arr.date;
+    wrap.querySelector('[data-k="arrival-hour"]').value = arr.hour;
+    wrap.querySelector('[data-k="arrival-minute"]').value = arr.minute;
+    wrap.querySelector('[data-k="arrival-ap"]').value = arr.ap;
+  }
+  wrap.querySelector("[data-del]").onclick = () => {
+    if (document.querySelectorAll("#legs .block").length < 2) return;
+    wrap.remove();
+    saveForm();
+  };
+  const note = wrap.querySelector("[data-tz]");
+  bindSuggest(wrap.querySelector('[data-k="origin"]'), note);
+  bindSuggest(wrap.querySelector('[data-k="destination"]'), note);
+  wrap.querySelectorAll("input, select").forEach((el) => el.addEventListener("change", saveForm));
+  $("#legs").appendChild(wrap);
+}
+function readBlocks() {
+  return [...document.querySelectorAll("#legs .block")].map((wrap) => {
+    const depDate = wrap.querySelector('[data-k="departure-date"]').value;
+    const depTime = joinTime(wrap.querySelector('[data-k="departure-hour"]').value, wrap.querySelector('[data-k="departure-minute"]').value, wrap.querySelector('[data-k="departure-ap"]').value);
+    const arrDate = wrap.querySelector('[data-k="arrival-date"]').value;
+    const arrTime = joinTime(wrap.querySelector('[data-k="arrival-hour"]').value, wrap.querySelector('[data-k="arrival-minute"]').value, wrap.querySelector('[data-k="arrival-ap"]').value);
+    return {
+      method: wrap.querySelector('[data-k="method"]').value,
+      origin: wrap.querySelector('[data-k="origin"]').value.trim(),
+      destination: wrap.querySelector('[data-k="destination"]').value.trim(),
+      departure: depDate && depTime ? `${depDate}T${depTime}` : "",
+      arrival: arrDate && arrTime ? `${arrDate}T${arrTime}` : ""
+    };
+  });
+}
+$("#addStay").onclick = () => { stayBlock(); saveForm(); };
+$("#example").onclick = () => {
+  $("#tripName").value = "Houston, SD, SF, Nashville";
+  $("#legs").innerHTML = "";
+  [
+    { method: "plane", origin: "Houston, TX", destination: "San Diego, CA", departure: "2026-10-10T08:00", arrival: "2026-10-10T11:30" },
+    { method: "plane", origin: "San Diego, CA", destination: "San Francisco, CA", departure: "2026-10-12T09:00", arrival: "2026-10-12T11:30" },
+    { method: "plane", origin: "San Francisco, CA", destination: "Nashville, TN", departure: "2026-10-15T09:00", arrival: "2026-10-15T15:30" },
+    { method: "plane", origin: "Nashville, TN", destination: "Houston, TX", departure: "2026-10-18T12:00", arrival: "2026-10-18T18:00" }
+  ].forEach(stayBlock);
+  saveForm();
+};
+
+let bagSerial = 1;
+function readBags() {
+  return [...document.querySelectorAll("#bags .bag-row")].map((row) => ({
+    id: row.dataset.id,
+    name: row.querySelector(".bag-name").value.trim() || "Suitcase",
+    len: Number(row.querySelector(".bag-len").value) || 0,
+    wid: Number(row.querySelector(".bag-wid").value) || 0,
+    dep: Number(row.querySelector(".bag-dep").value) || 0
+  }));
+}
+function bagRow(bag) {
+  const row = document.createElement("div");
+  row.className = "trip-group keep-row bag-row";
+  row.dataset.id = bag.id;
+  row.innerHTML = `
+    <label>Description <input class="bag-name" type="text" value="${esc(bag.name)}" /></label>
+    <label>Length (in.) <input class="bag-len" type="number" min="1" step="0.5" value="${bag.len}" /></label>
+    <label>Width (in.) <input class="bag-wid" type="number" min="1" step="0.5" value="${bag.wid}" /></label>
+    <label>Depth (in.) <input class="bag-dep" type="number" min="1" step="0.5" value="${bag.dep}" /></label>
+    <button class="ghost" type="button" data-remove-bag>Remove Luggage</button>`;
+  row.querySelector("[data-remove-bag]").onclick = () => {
+    if (document.querySelectorAll("#bags .bag-row").length < 2) return;
+    const id = row.dataset.id;
+    row.remove();
+    if (last && last.pack) {
+      const keep = readBags()[0].id;
+      last.pack.forEach((item) => {
+        if (!item.byBag || !item.byBag[id]) return;
+        item.byBag[keep] = (item.byBag[keep] || 0) + item.byBag[id];
+        delete item.byBag[id];
+      });
+      renderPack();
+    }
+    saveForm();
+  };
+  const name = row.querySelector(".bag-name");
+  const commit = () => { saveForm(); if (last && last.pack) renderPack(); };
+  name.addEventListener("change", commit);
+  name.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); name.blur(); } });
+  row.querySelectorAll("input[type='number']").forEach((input) => input.addEventListener("change", commit));
+  $("#bags").appendChild(row);
+}
+function addBag(bag) {
+  bagSerial = Math.max(bagSerial, Number(bag.id) || 0);
+  bagRow(bag);
+}
+function nextBag() {
+  bagSerial += 1;
+  addBag({ id: String(bagSerial), name: `Suitcase ${document.querySelectorAll("#bags .bag-row").length + 1}`, len: 28, wid: 22, dep: 11 });
+  saveForm();
+  if (last && last.pack) renderPack();
+}
+$("#addBag").onclick = nextBag;
+function formState() {
+  const bags = readBags();
+  const first = bags[0] || { len: 28, wid: 22, dep: 11 };
+  return {
+    name: $("#tripName").value, len: first.len, wid: first.wid, dep: first.dep, bags,
+    cold: $("#cold").value, cool: $("#cool").value, warm: $("#warm").value,
+    blocks: readBlocks()
+  };
+}
+function applyForm(s) {
+  if (!s) return;
+  const stored = s.name || "";
+  $("#tripName").value = stored.includes("→") ? "Houston, SD, SF, Nashville" : stored;
+  $("#cold").value = 60; $("#cool").value = 70; $("#warm").value = 80;
+  lockBands();
+  $("#bags").innerHTML = "";
+  const bags = s.bags && s.bags.length ? s.bags : [{ id: "1", name: "Suitcase 1", len: s.len || 28, wid: s.wid || 22, dep: s.dep || 11 }];
+  bags.forEach(addBag);
+  $("#legs").innerHTML = "";
+  (s.blocks && s.blocks.length ? s.blocks : [{}]).forEach(stayBlock);
+}
+function db() { return JSON.parse(localStorage.getItem(STORE) || "{\"trips\":[],\"form\":null,\"theme\":null}"); }
+function writeDb(d) { localStorage.setItem(STORE, JSON.stringify(d)); }
+function saveForm() {
+  const d = db(); d.form = formState(); writeDb(d);
+}
+function refreshSaved() {
+  const sel = $("#saved");
+  const names = db().trips.map((t) => t.name);
+  sel.innerHTML = names.map((n) => `<option value="${n}">${n.length > 22 ? n.slice(0, 20) + "…" : n}</option>`).join("");
+}
+$("#saveTrip").onclick = () => {
+  const notice = $("#saveNotice");
+  notice.className = "status";
+  const name = $("#tripName").value.trim();
+  if (!name) {
+    notice.className = "status err";
+    notice.textContent = "Name the trip before saving.";
+    return;
+  }
+  const d = db();
+  const trip = { name, savedAt: new Date().toISOString(), form: formState(), cache: last || null };
+  const i = d.trips.findIndex((t) => t.name === name);
+  if (i >= 0 && !confirm(`"${name}" is already saved. Overwrite it?`)) return;
+  if (i >= 0) d.trips[i] = trip; else d.trips.push(trip);
+  d.form = trip.form;
+  writeDb(d);
+  refreshSaved();
+  $("#saved").value = name;
+  notice.textContent = i >= 0 ? "Overwritten." : "Saved.";
+};
+$("#loadTrip").onclick = () => {
+  const t = db().trips.find((x) => x.name === $("#saved").value);
+  if (!t) return;
+  applyForm(t.form);
+  if (t.cache) { last = t.cache; scrub = 0; zoom = 0; renderPack(); openPane("board"); }
+};
+$("#deleteTrip").onclick = () => {
+  const name = $("#saved").value;
+  if (!name || !confirm(`Delete "${name}"?`)) return;
+  const d = db();
+  d.trips = d.trips.filter((t) => t.name !== name);
+  writeDb(d); refreshSaved();
+};
+$("#exportTrip").onclick = () => {
+  const blob = new Blob([JSON.stringify({ form: formState(), cache: last || null }, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${($("#tripName").value || "trip").replace(/\s+/g, "-")}.json`;
+  a.click();
+};
+$("#importTrip").onchange = async (e) => {
+  const text = await e.target.files[0].text();
+  const data = JSON.parse(text);
+  applyForm(data.form);
+  if (data.cache) { last = data.cache; scrub = 0; zoom = 0; renderPack(); openPane("board"); }
+};
+
+function applyTheme(mode) {
+  document.documentElement.dataset.theme = mode;
+  $("#theme").textContent = mode === "dark" ? "Light mode" : "Dark mode";
+}
+const savedTheme = db().theme;
+applyTheme(savedTheme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+$("#theme").onclick = () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  applyTheme(next);
+  const d = db(); d.theme = next; writeDb(d);
+};
+$("#legendBtn").onclick = () => { $("#legend").hidden = false; };
+$("#closeLegend").onclick = () => { $("#legend").hidden = true; };
+
+async function geocode(place) {
+  const json = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=${encodeURIComponent(place)}`)).json();
+  if (!json.results || !json.results.length) throw new Error(`No match for ${place}`);
+  const g = json.results[0];
+  return { name: g.name, admin: g.admin1 || "", lat: g.latitude, lon: g.longitude, tz: g.timezone };
+}
+function storeSun(geo, json) {
+  if (!json.daily || !json.daily.time) return;
+  geo.sun = json.daily.time.map((date, i) => ({ date: date.slice(5), rise: json.daily.sunrise[i], set: json.daily.sunset[i] }));
+}
+function isNight(ch, label) {
+  const geo = ch.type === "travel" ? (ch.to || ch.from) : ch.geo;
+  const hour = Number(label.slice(11, 13));
+  const hit = geo && geo.sun && geo.sun.find((s) => s.date === label.slice(5, 10));
+  if (!hit) return hour < 7 || hour >= 19;
+  const rise = Number(hit.rise.slice(11, 13));
+  const set = Number(hit.set.slice(11, 13));
+  return hour < rise || hour >= set;
+}
+function wallToUtc(local, timeZone) {
+  if (!local || !timeZone) return new Date(local);
+  const [d, t] = local.split("T");
+  const [y, mo, da] = d.split("-").map(Number);
+  const [hh, mm] = t.split(":").map(Number);
+  const utc = Date.UTC(y, mo - 1, da, hh, mm);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(utc)).map((p) => [p.type, p.value]));
+  const asZone = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute);
+  return new Date(utc - (asZone - utc));
+}
+function hoursLabel(n) {
+  const sign = n < 0 ? "-" : "";
+  const mins = Math.round(Math.abs(n) * 60);
+  return `${sign}${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+function zoneNote(ch) {
+  if (!ch || ch.type !== "travel" || !ch.from || !ch.to || !ch.from.tz || ch.from.tz === ch.to.tz) return null;
+  const elapsed = (wallToUtc(ch.end, ch.to.tz) - wallToUtc(ch.start, ch.from.tz)) / 36e5;
+  const [ds, ts] = ch.start.split("T");
+  const [de, te] = ch.end.split("T");
+  const wall = (Date.UTC(...de.split("-").map(Number).map((n, i) => i === 1 ? n - 1 : n), ...te.split(":").map(Number)) - Date.UTC(...ds.split("-").map(Number).map((n, i) => i === 1 ? n - 1 : n), ...ts.split(":").map(Number))) / 36e5;
+  const shift = wall - elapsed;
+  if (Math.abs(shift) < 0.2) return null;
+  const dir = shift < 0 ? "lost" : "gained";
+  return `Elapsed ${hoursLabel(elapsed)}.<br>Clock ${dir} ${hoursLabel(Math.abs(shift))}.`;
+}
+function avg(a) { return a.reduce((s, n) => s + Number(n || 0), 0) / (a.length || 1); }
+
+async function hoursFor(geo, start, end) {
+  const daysOut = (new Date(start) - Date.now()) / 86400000;
+  if (daysOut <= 16) {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${geo.lat}&longitude=${geo.lon}&hourly=apparent_temperature,weather_code,precipitation_probability,wind_speed_10m&daily=sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&start_date=${start.slice(0, 10)}&end_date=${end.slice(0, 10)}`;
+    const json = await (await fetch(url)).json();
+    if (!json.hourly) throw new Error(`No forecast for ${geo.name}`);
+    storeSun(geo, json);
+    return json.hourly.time.map((t, i) => ({
+      t, feels: json.hourly.apparent_temperature[i], code: json.hourly.weather_code[i],
+      pop: json.hourly.precipitation_probability[i], wind: json.hourly.wind_speed_10m[i], source: "forecast"
+    }));
+  }
+  const buckets = {};
+  const year = new Date(start).getUTCFullYear();
+  for (let back = 1; back <= 8; back++) {
+    const s = new Date(start); s.setUTCFullYear(year - back);
+    const e = new Date(end); e.setUTCFullYear(year - back);
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${geo.lat}&longitude=${geo.lon}&start_date=${ymd(s)}&end_date=${ymd(e)}&hourly=apparent_temperature,weather_code,precipitation,wind_speed_10m&daily=sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto`;
+    const json = await (await fetch(url)).json();
+    if (!json.hourly) continue;
+    storeSun(geo, json);
+    json.hourly.time.forEach((t, i) => {
+      const key = t.slice(5, 13);
+      buckets[key] = buckets[key] || { feels: [], code: [], wind: [] };
+      buckets[key].feels.push(json.hourly.apparent_temperature[i]);
+      buckets[key].code.push(json.hourly.weather_code[i]);
+      buckets[key].wind.push(json.hourly.wind_speed_10m[i]);
+    });
+  }
+  const out = [];
+  for (let d = new Date(start); d <= new Date(end); d.setHours(d.getHours() + 1)) {
+    const key = d.toISOString().slice(5, 13);
+    const b = buckets[key];
+    out.push({
+      t: d.toISOString().slice(0, 13) + ":00",
+      feels: b ? avg(b.feels) : ROOM,
+      code: b ? Math.round(avg(b.code)) : 1,
+      pop: null,
+      wind: b ? avg(b.wind) : 8,
+      source: "climate"
+    });
+  }
+  return out;
+}
+
+function buildChapters(legs, geoBy, hoursBy) {
+  const chapters = [];
+  legs.forEach((leg, i) => {
+    const from = geoBy[leg.origin];
+    const to = geoBy[leg.destination];
+    chapters.push({
+      type: "travel", method: leg.method,
+      allDay: (new Date(leg.arrival) - new Date(leg.departure)) / 36e5 > 7,
+      start: leg.departure, end: leg.arrival, from, to
+    });
+    const next = legs[i + 1];
+    if (next && next.departure > leg.arrival) {
+      const hours = (hoursBy[leg.destination] || []).filter((h) => h.t >= leg.arrival.slice(0, 13) && h.t <= next.departure.slice(0, 13));
+      chapters.push({ type: "stay", start: leg.arrival, end: next.departure, geo: to, hours });
+    }
+  });
+  return chapters;
+}
+
+function wearFor(chapter, hour, t, arrivalFeel) {
+  if (chapter.type === "travel") {
+    const base = outfit(band(ROOM, t));
+    if (chapter.allDay) return { label: "Traveling all day", items: base, band: band(ROOM, t) };
+    const extra = outfit(band(arrivalFeel, t)).filter((item) => !base.includes(item));
+    return { label: "Traveling, layered for arrival", items: base.concat(extra), band: band(ROOM, t) };
+  }
+  const wet = (hour.pop != null && hour.pop >= 40) || hour.code >= 51 && hour.code <= 82 || hour.code >= 95;
+  const b = band(hour.feels, t);
+  const items = outfit(b).slice();
+  if (wet) {
+    const at = items.findIndex((item) => item.startsWith("Walking shoes"));
+    items.splice(at < 0 ? items.length : at, 0, "Rain shell");
+  }
+  return { label: `${b} in ${chapter.geo.name}`, items, band: b };
+}
+
+function rollup() {
+  const t = last.thresholds;
+  const bandsHit = new Set();
+  let wet = false;
+  last.chapters.forEach((ch) => {
+    if (ch.type === "travel") {
+      bandsHit.add(band(ROOM, t));
+      if (!ch.allDay) bandsHit.add(band(ch.arrivalFeel || ROOM, t));
+      return;
+    }
+    ch.hours.forEach((h) => {
+      bandsHit.add(band(h.feels, t));
+      if ((h.pop != null && h.pop >= 40) || (h.code >= 51 && h.code <= 82) || h.code >= 95) wet = true;
+    });
+  });
+  const stays = last.chapters.filter((c) => c.type === "stay");
+  const days = stays.length ? Math.max(1, Math.round((new Date(stays[stays.length - 1].end) - new Date(stays[0].start)) / 86400000)) : 1;
+  const items = [];
+  const add = (item, qty) => {
+    const hit = items.find((x) => x.item === item);
+    if (hit) hit.qty = Math.max(hit.qty, qty);
+    else items.push({ item, qty });
+  };
+  if (bandsHit.has("hot") || bandsHit.has("warm")) add("T-shirt", days);
+  if (bandsHit.has("cold") || bandsHit.has("cool")) add("Long-sleeve", 1);
+  if (bandsHit.has("cold") || bandsHit.has("cool")) add("Fleece", 1);
+  if (bandsHit.has("cold")) add("Coat", 1);
+  if (wet) add("Rain shell", 1);
+  if (bandsHit.has("hot") || bandsHit.has("warm")) add("Shorts", 1);
+  add("Pants", bandsHit.has("cold") || bandsHit.has("cool") ? 2 : 1);
+  add("Walking shoes", 1);
+  if (bandsHit.has("hot")) add("Sandals", 1);
+  add("Underwear", days);
+  add("Socks (pairs)", days);
+  add("Toiletries", 1);
+  add("Pajamas", days >= 4 ? 2 : 1);
+  Object.keys(DIMS).forEach((name) => { if (!items.find((x) => x.item === name)) items.push({ item: name, qty: 0 }); });
+  const first = (readBags()[0] || { id: "1" }).id;
+  items.forEach((item) => { item.byBag = { [first]: item.qty || 0 }; });
+  return items;
+}
+function bagUsed(items, bagId) {
+  return items.reduce((n, it) => n + vol(it.item) * ((it.byBag && it.byBag[bagId]) || 0), 0);
+}
+function markBagLabels() {
+  document.querySelectorAll(".pack-group").forEach((group) => {
+    const cells = [...group.querySelectorAll(".pack-cell")];
+    const columns = new Map();
+    cells.forEach((cell) => {
+      const left = Math.round(cell.offsetLeft / 8) * 8;
+      const hit = columns.get(left);
+      if (!hit || cell.offsetTop < hit.offsetTop) columns.set(left, cell);
+    });
+    const heads = new Set(columns.values());
+    cells.forEach((cell) => {
+      const head = heads.has(cell);
+      cell.querySelectorAll(".bag-lab").forEach((lab) => { lab.hidden = !head; });
+    });
+  });
+}
+function renderPack() {
+  const items = last.pack || [];
+  const bags = readBags();
+  const groups = [
+    ["Undergarments", ["Socks (pairs)", "Underwear"]],
+    ["Bottoms", ["Dress", "Jeans", "Joggers", "Pants", "Shorts", "Skirt", "Slacks"]],
+    ["Tops", ["Coat", "Fleece", "Long-sleeve", "Rain shell", "T-shirt", "Wind shell"]],
+    ["Shoes (pairs)", ["Nice shoes", "Sandals", "Walking shoes"]],
+    ["Accessories", ["Cap", "Pajamas"]],
+    ["Miscellaneous", ["Electronics\n(cables, chargers)", "Electronics\n(laptops, cameras)", "Miscellaneous", "Toiletries"]]
+  ];
+  const meters = bags.map((bag) => {
+    const cap = bag.len * bag.wid * bag.dep;
+    const used = bagUsed(items, bag.id);
+    const fit = Math.min(used, cap);
+    const over = Math.max(0, used - cap);
+    const fitPct = cap ? Math.round(fit / cap * 100) : 0;
+    const overPct = cap ? Math.min(100, Math.round(over / cap * 100)) : 0;
+    return `<p>${esc(bag.name)} · ${bag.len} × ${bag.wid} × ${bag.dep} in = ${Math.round(cap)} in³ · ${Math.round(used)} in³ packed${over ? `, ${Math.round(over)} in³ over` : ""}</p><div class="bag-meter"><i class="over" style="width:${overPct}%"></i><i style="width:${fitPct}%"></i></div>`;
+  }).join("");
+  const cells = groups.map(([name, names]) => {
+    const body = names.map((item) => {
+      const i = items.findIndex((x) => x.item === item);
+      if (i < 0) return "";
+      const it = items[i];
+      const dims = DIMS[it.item] || [0, 0, 0];
+      const total = bags.reduce((n, bag) => n + ((it.byBag && it.byBag[bag.id]) || 0), 0);
+      const steppers = bags.map((bag, n) => `<span class="bag-qty"><b class="bag-lab">Bag ${n + 1}</b><span class="stepper"><button type="button" data-q="${i}" data-bag="${bag.id}" data-d="-1">−</button><input class="qty" type="number" min="0" value="${(it.byBag && it.byBag[bag.id]) || 0}" data-q="${i}" data-bag="${bag.id}"><button type="button" data-q="${i}" data-bag="${bag.id}" data-d="1">+</button></span></span>`).join("");
+      return `<div class="pack-cell${total ? "" : " unused"}"><span class="qtys">${steppers}</span><span class="name" tabindex="0">${it.item}<span class="dim-tip">${Math.round(vol(it.item))} in³<br>${dims[0]} × ${dims[1]} × ${dims[2]}</span></span></div>`;
+    }).join("");
+    return `<h3>${name}</h3><div class="pack-group">${body}</div>`;
+  }).join("");
+  $("#packBody").innerHTML = `${meters}<div class="pack-grid">${cells}</div>`;
+  $("#packBody").querySelectorAll("button[data-q]").forEach((btn) => {
+    btn.onclick = () => {
+      const row = last.pack[Number(btn.dataset.q)];
+      row.byBag = row.byBag || {};
+      row.byBag[btn.dataset.bag] = Math.max(0, (row.byBag[btn.dataset.bag] || 0) + Number(btn.dataset.d));
+      renderPack();
+    };
+  });
+  $("#packBody").querySelectorAll("input.qty").forEach((input) => {
+    const apply = () => {
+      const row = last.pack[Number(input.dataset.q)];
+      row.byBag = row.byBag || {};
+      row.byBag[input.dataset.bag] = Math.max(0, Math.round(Number(input.value) || 0));
+      renderPack();
+    };
+    input.addEventListener("change", apply);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); } });
+  });
+  $("#packBody").querySelectorAll(".name").forEach((name) => {
+    name.onclick = (e) => { e.stopPropagation(); name.classList.toggle("on"); };
+  });
+  markBagLabels();
+  $("#packPane").hidden = false;
+  requestAnimationFrame(markBagLabels);
+}
+function fillPack() {
+  last.pack = rollup();
+  renderPack();
+}
+
+$("#plan").onclick = async () => {
+  const status = $("#status");
+  status.className = "status";
+  try {
+    const legs = readBlocks();
+    if (!legs.length || legs.some((leg) => !leg.origin || !leg.destination || !leg.departure || !leg.arrival)) throw new Error("Every leg needs both places and both date and time fields.");
+    const geoBy = {};
+    const hoursBy = {};
+    const places = [...new Set(legs.flatMap((leg) => [leg.origin, leg.destination]))];
+    for (const place of places) {
+      status.textContent = `Weather for ${place}…`;
+      geoBy[place] = await geocode(place);
+    }
+    for (let i = 0; i < legs.length - 1; i++) {
+      const place = legs[i].destination;
+      if (hoursBy[place]) continue;
+      hoursBy[place] = await hoursFor(geoBy[place], legs[i].arrival, legs[legs.length - 1].departure);
+    }
+    const chapters = buildChapters(legs, geoBy, hoursBy);
+    const geos = [];
+    legs.forEach((leg) => {
+      const from = geoBy[leg.origin];
+      const to = geoBy[leg.destination];
+      if (!geos.length || geos[geos.length - 1] !== from) geos.push(from);
+      geos.push(to);
+    });
+    chapters.forEach((ch) => {
+      if (ch.type === "travel" && ch.to) {
+        const stay = chapters.find((c) => c.type === "stay" && c.geo === ch.to);
+        const hit = stay && stay.hours.find((h) => h.t.slice(0, 13) >= ch.end.slice(0, 13));
+        ch.arrivalFeel = hit ? hit.feels : ROOM;
+      }
+    });
+    last = { chapters, geos, hoursBy, thresholds: thresholds(), trip: formState() };
+    scrub = 0;
+    zoom = 0;
+    fillPack();
+    openPane("board");
+    const sample = Object.values(hoursBy)[0];
+    status.textContent = "";
+    saveForm();
+  } catch (err) {
+    status.className = "status err";
+    status.textContent = err.message;
+  }
+};
+
+function slots() {
+  const out = [];
+  last.chapters.forEach((ch) => {
+    if (ch.type === "travel") {
+      const a = ch.start.slice(0, 13);
+      const b = ch.end.slice(0, 13);
+      if (!a || !b) return;
+      let cursor = a;
+      while (cursor <= b) {
+        out.push({ ch, label: cursor, frac: a === b ? 1 : (Number(cursor.slice(11, 13)) - Number(a.slice(11, 13))) });
+        const d = new Date(cursor + ":00");
+        d.setHours(d.getHours() + 1);
+        const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}`;
+        if (next === cursor) break;
+        cursor = next;
+      }
+      return;
+    }
+    ch.hours.forEach((h) => out.push({ ch, hour: h, label: h.t.slice(0, 13) }));
+  });
+  return out;
+}
+function chapterAt(index) {
+  const all = slots();
+  if (!all.length) return null;
+  return all[Math.min(index, all.length - 1)];
+}
+function hourCount() { return Math.max(1, slots().length); }
+
+function hour12(label) {
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const h = Number(label.slice(11, 13));
+  return `${months[Number(label.slice(5, 7)) - 1]} ${Number(label.slice(8, 10))} (${h % 12 || 12} ${h >= 12 ? "PM" : "AM"})`;
+}
+function hourOnly(label) {
+  const h = Number(label.slice(11, 13));
+  return `${h % 12 || 12} ${h >= 12 ? "PM" : "AM"}`;
+}
+function visibleSlots() {
+  const all = slots();
+  if (!all.length || zoom === 0) return all.map((s, i) => ({ ...s, i }));
+  const span = zoom === 1 ? 24 : 12;
+  return all.map((s, i) => ({ ...s, i })).filter((s) => Math.abs(s.i - scrub) <= span);
+}
+function openPane(name) {
+  $("#viewSwitch").hidden = false;
+  $("#boardTab").hidden = false;
+  document.querySelectorAll("#viewSwitch button").forEach((b) => b.classList.toggle("on", b.dataset.pane === name));
+  $("#stayPane").hidden = name !== "stays";
+  $("#boardPane").hidden = name !== "board";
+  if (name === "board") requestAnimationFrame(() => { drawMap(); drawChapters(); paint(); if (map) map.resize(); });
+}
+document.querySelectorAll("#viewSwitch button").forEach((b) => b.onclick = () => openPane(b.dataset.pane));
+$("#zoomIn").onclick = () => { zoom = Math.min(2, zoom + 1); paint(); };
+$("#zoomOut").onclick = () => { zoom = Math.max(0, zoom - 1); paint(); };
+$("#scrub").oninput = (e) => { scrub = Number(e.target.value); paint(); };
+
+function drawMap() {
+  if (!map) {
+    const pin = document.createElement("div");
+    pin.className = "pin dot";
+    map = new maplibregl.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/positron", attributionControl: true });
+    marker = new maplibregl.Marker({ element: pin }).setLngLat([0, 0]).addTo(map);
+    mapNight = false;
+  }
+  const drawLine = () => {
+    if (!last) return;
+    const data = { type: "Feature", geometry: { type: "LineString", coordinates: last.geos.map((g) => [g.lon, g.lat]) } };
+    if (map.getSource("route")) map.getSource("route").setData(data);
+    else {
+      map.addSource("route", { type: "geojson", data });
+      map.addLayer({ id: "route", type: "line", source: "route", paint: { "line-color": "#1d4f91", "line-width": 3 } });
+    }
+    const b = new maplibregl.LngLatBounds();
+    (map._pins || []).forEach((pin) => pin.remove());
+    map._pins = last.geos.map((g) => new maplibregl.Marker({ color: "#1b3a4b", scale: 0.6 }).setLngLat([g.lon, g.lat]).addTo(map));
+    last.geos.forEach((g) => b.extend([g.lon, g.lat]));
+    map.fitBounds(b, { padding: 40, duration: 0 });
+  };
+  map._drawLine = drawLine;
+  if (map.isStyleLoaded()) drawLine();
+  else map.once("load", drawLine);
+}
+function syncMap(night) {
+  if (!map || mapNight === night) return;
+  mapNight = night;
+  $("#map").classList.toggle("night", night);
+  map.setStyle(night ? "https://tiles.openfreemap.org/styles/dark" : "https://tiles.openfreemap.org/styles/positron");
+  map.once("styledata", () => { if (map._drawLine) map._drawLine(); });
+}
+function drawChapters() {
+  const box = $("#chapters");
+  const scale = $("#scale");
+  box.innerHTML = "";
+  scale.innerHTML = "";
+  const all = slots();
+  const total = Math.max(1, all.length);
+  $("#scrub").max = String(Math.max(1, total - 1));
+  $("#scrub").value = String(scrub);
+  let seen = "";
+  for (let i = 0; i < all.length; i += 6) {
+    const left = `${(i / Math.max(1, all.length - 1)) * 100}%`;
+    const tick = document.createElement("i");
+    tick.style.left = left;
+    tick.style.height = "0.5rem";
+    scale.appendChild(tick);
+    const date = hour12(all[i].label).replace(/ \(.*\)$/, "");
+    if (date === seen) continue;
+    seen = date;
+    tick.style.height = "0.75rem";
+    const lab = document.createElement("b");
+    lab.style.left = left;
+    lab.style.fontSize = "0.75rem";
+    lab.textContent = date;
+    scale.appendChild(lab);
+  }
+  let acc = 0;
+  last.chapters.forEach((ch) => {
+    const len = ch.type === "stay" ? Math.max(1, ch.hours.length) : Math.max(1, Math.round((new Date(ch.end) - new Date(ch.start)) / 36e5));
+    const tick = document.createElement("i");
+    tick.style.left = `${(acc / total) * 100}%`;
+    const lab = document.createElement("b");
+    lab.style.left = `${(acc / total) * 100}%`;
+    lab.style.background = "var(--card)";
+    lab.style.zIndex = "2";
+    const city = ch.type === "stay";
+    lab.style.top = city ? "2rem" : "0.5rem";
+    lab.style.height = city ? "1rem" : "1.2rem";
+    if (city) {
+      tick.style.height = "2rem";
+      tick.style.background = "var(--teal)";
+      lab.style.color = "var(--teal)";
+    } else {
+      tick.style.borderColor = "var(--muted)";
+      lab.style.color = "var(--ink)";
+    }
+    lab.textContent = city ? ch.geo.name : "Travel";
+    box.appendChild(tick); box.appendChild(lab);
+    acc += len;
+  });
+}
+function paint() {
+  const slot = chapterAt(scrub);
+  if (!slot) return;
+  const { ch } = slot;
+  const t = last.thresholds;
+  const shown = visibleSlots();
+  const estimate = shown.some((s) => s.hour && s.hour.source === "climate");
+  $("#graphWrap").classList.toggle("estimate", estimate);
+  if (ch.type === "travel") {
+    const start = new Date(ch.start), end = new Date(ch.end);
+    const now = new Date(slot.label + ":00");
+    const frac = Math.min(1, Math.max(0, (now - start) / ((end - start) || 1)));
+    if (marker && ch.from && ch.to) marker.setLngLat([ch.from.lon + (ch.to.lon - ch.from.lon) * frac, ch.from.lat + (ch.to.lat - ch.from.lat) * frac]);
+    else if (marker && ch.to) marker.setLngLat([ch.to.lon, ch.to.lat]);
+  } else if (marker) marker.setLngLat([ch.geo.lon, ch.geo.lat]);
+  const vehicle = { plane: "✈", train: "🚆", car: "🚗" }[ch.method] || "✈";
+  if (marker) {
+    const pin = marker.getElement();
+    if (ch.type === "travel") { pin.className = "pin"; pin.textContent = vehicle; }
+    else { pin.className = "pin dot"; pin.textContent = ""; }
+  }
+  const nowFeel = ch.type === "travel" ? ROOM : (slot.hour ? slot.hour.feels : ROOM);
+  const nowBand = band(nowFeel, t);
+  const bandFill = { cold: "#1a4f8b", cool: "#0e8f9c", warm: "#e07a2f", hot: "#c0392b" }[nowBand];
+  $("#graphWrap").style.background = "#123";
+  const sky = ch.type === "travel" ? "Traveling" : ((slot.hour && slot.hour.code != null) ? skyName(slot.hour.code) : "—");
+  const skyIcon = ch.type === "travel" ? vehicle : wmoIcon((slot.hour && slot.hour.code) || 0, Number(slot.label.slice(11, 13)));
+  $("#graphWrap").style.background = "";
+  const feels = shown.filter((s) => s.hour).map((s) => s.hour.feels);
+  const lo = feels.length ? Math.min(...feels) : ROOM;
+  const hi = feels.length ? Math.max(...feels) : ROOM;
+  const min = Math.floor(Math.min(lo, ROOM) / 5) * 5 - 5;
+  const max = Math.ceil(Math.max(hi, ROOM) / 5) * 5 + 5;
+  const box = $("#graphWrap").getBoundingClientRect();
+  const W = Math.max(320, Math.round(box.width) || 640);
+  const H = 320;
+  $("#wx").setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const left = 48, right = W - 20, top = 20, bottom = H - 28;
+  const xOf = (i) => left + ((shown.findIndex((s) => s.i === i)) / Math.max(1, shown.length - 1)) * (right - left);
+  const yOf = (v) => top + (1 - (v - min) / (max - min || 1)) * (bottom - top);
+  const grids = [];
+  for (let v = min; v <= max; v += 10) {
+    grids.push(`<line x1="${left}" y1="${yOf(v)}" x2="${right}" y2="${yOf(v)}" stroke="rgba(255,255,255,.28)" />`);
+    grids.push(`<text x="8" y="${yOf(v) + 4}" font-size="14" font-weight="700" fill="#1c2428">${v}°</text>`);
+  }
+  let d = "";
+  let gaps = "";
+  let prev = null;
+  shown.forEach((s) => {
+    if (!s.hour) return;
+    const x = xOf(s.i), y = yOf(s.hour.feels);
+    if (prev && s.i !== prev.i + 1) {
+      gaps += `<line x1="${xOf(prev.i)}" y1="${yOf(prev.hour.feels)}" x2="${x}" y2="${y}" stroke="#fff" stroke-width="2" stroke-dasharray="6 4" />`;
+      d += `M${x},${y}`;
+    } else d += prev == null ? `M${x},${y}` : `L${x},${y}`;
+    prev = s;
+  });
+  const step = Math.max(1, Math.round(shown.length / 6));
+  const bands = [
+    [min, t.cold, "#1a4f8b"],
+    [t.cold, t.cool, "#0e8f9c"],
+    [t.cool, t.warm, "#e07a2f"],
+    [t.warm, max, "#c0392b"]
+  ].map(([a, b, fill]) => {
+    const y1 = yOf(Math.max(a, min)), y2 = yOf(Math.min(b, max));
+    const y = Math.min(y1, y2), h = Math.abs(y2 - y1);
+    return h > 0 ? `<rect x="${left}" y="${y}" width="${right - left}" height="${h}" fill="${fill}" />` : "";
+  }).join("");
+  const xLabels = shown.filter((s, n) => n % step === 0).map((s) => `<text x="${xOf(s.i)}" y="${H - 8}" text-anchor="middle" font-size="14" font-weight="700" fill="#1c2428">${hourOnly(s.label)}</text>`).join("");
+  const sel = shown.find((s) => s.i === scrub);
+  const markX = sel ? xOf(sel.i) : left;
+  const markY = sel && sel.hour ? yOf(sel.hour.feels) : yOf(ROOM);
+  const callY = markY < 58 ? markY + 14 : markY - 36;
+  const boxW = 195;
+  const boxX = Math.min(right - boxW, Math.max(left, markX - boxW / 2));
+  const callout = `<g><rect x="${boxX}" y="${callY}" width="${boxW}" height="33" rx="5" fill="#111" fill-opacity=".72" /><text x="${boxX + boxW / 2}" y="${callY + 22}" text-anchor="middle" font-size="18" font-weight="700" fill="#fff">${skyIcon} ${sky} ${Math.round(nowFeel)}°</text></g>`;
+  const selected = `<line x1="${markX}" y1="${top}" x2="${markX}" y2="${bottom}" stroke="#fff" stroke-dasharray="3 3" /><circle cx="${markX}" cy="${markY}" r="5" fill="#fff" stroke="#1c2428" stroke-width="2" />${callout}`;
+  $("#wx").innerHTML = `${bands}${grids.join("")}<path d="${d}" fill="none" stroke="#fff" stroke-width="2.5" />${gaps}${selected}${xLabels}`;
+  document.querySelectorAll(".zone-clock").forEach((el) => el.remove());
+  const scrubBox = document.querySelector(".scrub-wrap");
+  last.chapters.forEach((ch) => {
+    const note = zoneNote(ch);
+    if (!note) return;
+    const all = slots();
+    const at = all.findIndex((s) => s.label.slice(0, 13) === ch.end.slice(0, 13));
+    if (at >= 0) {
+      const onScrub = document.createElement("div");
+      onScrub.className = "zone-clock";
+      onScrub.style.left = `${(at / Math.max(1, all.length - 1)) * 100}%`;
+      onScrub.style.top = "42px";
+      onScrub.innerHTML = `🕐<span>${note}</span>`;
+      scrubBox.appendChild(onScrub);
+    }
+    const hit = shown.find((s) => s.hour && s.label.slice(0, 13) >= ch.end.slice(0, 13));
+    if (!hit) return;
+    const prev = [...shown].reverse().find((s) => s.hour && s.i < hit.i);
+    const x = prev ? (xOf(prev.i) + xOf(hit.i)) / 2 : xOf(hit.i);
+    const y = prev ? (yOf(prev.hour.feels) + yOf(hit.hour.feels)) / 2 : yOf(hit.hour.feels);
+    const clock = document.createElement("div");
+    clock.className = "zone-clock";
+    clock.style.left = `${x / W * 100}%`;
+    clock.style.top = `${y / H * 100}%`;
+    clock.innerHTML = `🕐<span>${note}</span>`;
+    $("#graphWrap").appendChild(clock);
+  });
+  const wear = ch.type === "travel" ? wearFor(ch, null, t, ch.arrivalFeel || ROOM) : wearFor(ch, slot.hour || { feels: ROOM, code: 0, pop: 0 }, t);
+  syncMap(isNight(ch, slot.label));
+  const place = ch.type === "travel" ? "Traveling" : ch.geo.name;
+  const tip = $("#scrubTip");
+  tip.textContent = hour12(slot.label);
+  tip.style.left = `${(scrub / Math.max(1, hourCount() - 1)) * 100}%`;
+  const where = ch.type === "travel" ? "Traveling" : ch.geo.name;
+  $("#wearNow").innerHTML = `<div class="wear-row"><span class="place">${place}</span><span class="when">${hour12(slot.label)}</span><span class="sky">${skyIcon} ${sky} ${Math.round(nowFeel)}°</span></div><div class="wear-line"><strong>Wear:</strong> ${wear.items.join(", ")}.</div>`;
+}
+
+applyForm(db().form || null);
+if (!document.querySelector("#bags .bag-row")) addBag({ id: "1", name: "Suitcase 1", len: 28, wid: 22, dep: 11 });
+if (!document.querySelector("#legs .block")) stayBlock();
+refreshSaved();
+document.addEventListener("click", () => document.querySelectorAll(".name.on").forEach((n) => n.classList.remove("on")));
+window.addEventListener("resize", () => { if (last && last.pack) markBagLabels(); });
+</script>
+</body>
+</html>
